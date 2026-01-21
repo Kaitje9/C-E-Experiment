@@ -56,18 +56,19 @@
       d: 3
     };
 
-    const DISPLAY_DURATION = 1000; // 1 second per word
-    const INTER_WORD_INTERVAL = 500; // 0.5 seconds between words
+    const DISPLAY_DURATION = 1500; // 1.5 seconds per word
+    const INTER_WORD_INTERVAL = 0; // no blank delay between words
     const PRE_DISPLAY_PAUSE = 2000; // 2 seconds "Get ready..." before first word
     const FINAL_PAUSE = 2000; // 2 seconds before recall
 
     // Generate a random distinct set (one word from each of 4 different categories)
+    // Returns { words: string[], categoriesUsed: string[] }
     const generateDistinctSet = () => {
       const categoryKeys = Object.keys(SIMILAR_SETS).filter(
         (key) => Array.isArray(SIMILAR_SETS[key]) && SIMILAR_SETS[key].length > 0
       );
       if (categoryKeys.length < 4) {
-        return [];
+        return { words: [], categoriesUsed: [] };
       }
       const selectedCategories = [];
       while (selectedCategories.length < 4) {
@@ -77,11 +78,12 @@
           selectedCategories.push(randomCategory);
         }
       }
-      return selectedCategories.map((category) => {
+      const words = selectedCategories.map((category) => {
         const words = SIMILAR_SETS[category] || [];
         if (!words.length) return '';
         return words[Math.floor(Math.random() * words.length)];
       });
+      return { words, categoriesUsed: selectedCategories };
     };
 
     // Generate all trials for the experiment
@@ -98,7 +100,7 @@
 
       // Practice trials: 2 similar (first two categories or repeated first), 2 distinct
       const firstCat = categories[0];
-      const secondCat = categories[1] || categories[0];
+      const secondCat = categories.find((c) => c !== firstCat) || categories[0];
 
       [firstCat, secondCat].forEach((category) => {
         const words = SIMILAR_SETS[category] || [];
@@ -111,34 +113,47 @@
       });
 
       for (let i = 0; i < 2; i++) {
+        const distinct = generateDistinctSet();
         trials.push({
           type: 'practice',
           condition: 'distinct',
-          category: `mixed-practice-${i + 1}`,
-          words: generateDistinctSet(),
+          category: distinct.categoriesUsed.join('+') || `mixed-practice-${i + 1}`,
+          words: distinct.words,
         });
       }
 
       // Experimental trials: 12 similar, 12 distinct
+      const experimentSimilar = [];
+      let lastSimCat = null;
       for (let i = 0; i < 12; i++) {
-        const category = categories[Math.floor(Math.random() * categories.length)];
+        // pick category not equal to lastSimCat if possible
+        const pool = categories.filter((c) => c !== lastSimCat);
+        const category =
+          pool.length > 0
+            ? pool[Math.floor(Math.random() * pool.length)]
+            : categories[Math.floor(Math.random() * categories.length)];
         const words = SIMILAR_SETS[category] || [];
-        trials.push({
+        experimentSimilar.push({
           type: 'experiment',
           condition: 'similar',
           category,
           words: words.slice(),
         });
+        lastSimCat = category;
       }
 
+      const experimentDistinct = [];
       for (let i = 0; i < 12; i++) {
-        trials.push({
+        const distinct = generateDistinctSet();
+        experimentDistinct.push({
           type: 'experiment',
           condition: 'distinct',
-          category: 'mixed',
-          words: generateDistinctSet(),
+          category: distinct.categoriesUsed.join('+') || `mixed-${i + 1}`,
+          words: distinct.words,
         });
       }
+
+      trials.push(...experimentSimilar, ...experimentDistinct);
       // Shuffle experimental trials while avoiding back-to-back same categories
       const practiceTrials = trials.slice(0, 4);
       const experimentTrials = trials.slice(4);
@@ -259,13 +274,11 @@
         return () => clearInterval(tick);
       }, [stage, readyMs]);
 
-      // Display sequence animation
+      // Display sequence animation (no blanks between words)
       useEffect(() => {
         if (stage !== 'display' || displayIndex === -1) return;
-        if (displayIndex < sequence.length * 2) {
-          const isShowingWord = displayIndex % 2 === 0;
-          const duration = isShowingWord ? DISPLAY_DURATION : INTER_WORD_INTERVAL;
-          const timer = setTimeout(() => setDisplayIndex(displayIndex + 1), duration);
+        if (displayIndex < sequence.length) {
+          const timer = setTimeout(() => setDisplayIndex(displayIndex + 1), DISPLAY_DURATION);
           return () => clearTimeout(timer);
         } else {
           // immediately move to preRecall countdown
@@ -490,14 +503,10 @@
                   {isPractice ? 'PRACTICE' : 'EXPERIMENT'} - {getProgressText()}
                 </div>
                 <div className="h-48 flex items-center justify-center">
-                  {displayIndex < sequence.length * 2 ? (
-                    displayIndex % 2 === 0 ? (
-                      <div className="text-6xl font-bold text-indigo-600 animate-pulse">
-                        {sequence[Math.floor(displayIndex / 2)]}
-                      </div>
-                    ) : (
-                      <div className="text-2xl text-gray-300">•</div>
-                    )
+                  {displayIndex < sequence.length ? (
+                    <div className="text-6xl font-bold text-indigo-600 animate-pulse">
+                      {sequence[displayIndex]}
+                    </div>
                   ) : (
                     <div className="text-2xl text-gray-300">...</div>
                   )}
@@ -507,7 +516,7 @@
                     <div
                       key={idx}
                       className={`w-4 h-4 rounded-full transition-colors ${
-                        idx < Math.floor(displayIndex / 2) ? 'bg-indigo-600' : 'bg-gray-300'
+                        idx < displayIndex ? 'bg-indigo-600' : 'bg-gray-300'
                       }`}
                     />
                   ))}
