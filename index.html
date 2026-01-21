@@ -114,13 +114,13 @@
         trials.push({
           type: 'practice',
           condition: 'distinct',
-          category: 'mixed',
+          category: `mixed-practice-${i + 1}`,
           words: generateDistinctSet(),
         });
       }
 
-      // Experimental trials: 20 similar, 20 distinct
-      for (let i = 0; i < 20; i++) {
+      // Experimental trials: 12 similar, 12 distinct
+      for (let i = 0; i < 12; i++) {
         const category = categories[Math.floor(Math.random() * categories.length)];
         const words = SIMILAR_SETS[category] || [];
         trials.push({
@@ -131,7 +131,7 @@
         });
       }
 
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 12; i++) {
         trials.push({
           type: 'experiment',
           condition: 'distinct',
@@ -158,7 +158,36 @@
         }
         if (!foundValid) shuffled.push(remaining.shift());
       }
-      return [...practiceTrials, ...shuffled];
+      let allTrials = [...practiceTrials, ...shuffled];
+      // Ensure no same category across the boundary between practice and experiment
+      if (practiceTrials.length && shuffled.length) {
+        const lastPractice = practiceTrials[practiceTrials.length - 1];
+        if (lastPractice.category === shuffled[0].category && shuffled.length > 1) {
+          // rotate shuffled so first differs
+          const first = shuffled.shift();
+          shuffled.push(first);
+          allTrials = [...practiceTrials, ...shuffled];
+        }
+      }
+      // Final pass to ensure no consecutive same category (failsafe)
+      const fixed = [];
+      for (let i = 0; i < allTrials.length; i++) {
+        const trial = allTrials[i];
+        if (fixed.length && fixed[fixed.length - 1].category === trial.category) {
+          // try to swap with next different
+          const swapIdx = allTrials.findIndex(
+            (t, idx) => idx > i && t.category !== fixed[fixed.length - 1].category
+          );
+          if (swapIdx > -1) {
+            const temp = allTrials[swapIdx];
+            allTrials[swapIdx] = trial;
+            fixed.push(temp);
+            continue;
+          }
+        }
+        fixed.push(trial);
+      }
+      return fixed;
     };
 
     function MemoryExperiment() {
@@ -239,12 +268,10 @@
           const timer = setTimeout(() => setDisplayIndex(displayIndex + 1), duration);
           return () => clearTimeout(timer);
         } else {
-          const timer = setTimeout(() => {
-            setStage('preRecall');
-            setDisplayIndex(-1);
-            setRecallMs(FINAL_PAUSE);
-          }, FINAL_PAUSE);
-          return () => clearTimeout(timer);
+          // immediately move to preRecall countdown
+          setStage('preRecall');
+          setDisplayIndex(-1);
+          setRecallMs(FINAL_PAUSE);
         }
       }, [stage, displayIndex, sequence]);
 
