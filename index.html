@@ -516,7 +516,7 @@
                     <div
                       key={idx}
                       className={`w-4 h-4 rounded-full transition-colors ${
-                        idx < displayIndex ? 'bg-indigo-600' : 'bg-gray-300'
+                        displayIndex >= 0 && idx <= displayIndex ? 'bg-indigo-600' : 'bg-gray-300'
                       }`}
                     />
                   ))}
