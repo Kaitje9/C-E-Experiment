@@ -278,7 +278,7 @@
       useEffect(() => {
         if (stage !== 'display' || displayIndex === -1) return;
         if (displayIndex < sequence.length) {
-          const timer = setTimeout(() => setDisplayIndex(displayIndex + 1), DISPLAY_DURATION);
+          const timer = setTimeout(() => setDisplayIndex((idx) => idx + 1), DISPLAY_DURATION);
           return () => clearTimeout(timer);
         } else {
           // immediately move to preRecall countdown
@@ -393,8 +393,8 @@
                 <div className="bg-blue-50 p-4 rounded-lg text-sm text-gray-700">
                   <p className="font-semibold mb-2">Experiment Structure:</p>
                   <ul className="space-y-1">
-                    <li>• 4 practice trials (2 similar, 2 distinct)</li>
-                    <li>• 40 experimental trials (20 similar, 20 distinct)</li>
+                    <li>• 4 practice trials</li>
+                    <li>• 24 experimental trials</li>
                     <li>• Each trial shows 4 words in sequence</li>
                   </ul>
                 </div>
@@ -431,7 +431,7 @@
                     <li><strong>Object 3</strong> - Arrow Left (←)</li>
                     <li><strong>Object 4</strong> - Arrow Right (→)</li>
                   </ul>
-                  <p className="font-semibold">You will start with 4 practice trials, followed by 40 experimental trials.</p>
+                  <p className="font-semibold">You will start with 4 practice trials, followed by 24 experimental trials.</p>
                   <p className="text-sm text-gray-600">Take your time and try to be as accurate as possible.</p>
                 </div>
                 <button
@@ -504,7 +504,7 @@
                 </div>
                 <div className="h-48 flex items-center justify-center">
                   {displayIndex < sequence.length ? (
-                    <div className="text-6xl font-bold text-indigo-600 animate-pulse">
+                    <div className="text-6xl font-bold text-indigo-600">
                       {sequence[displayIndex]}
                     </div>
                   ) : (
@@ -566,7 +566,7 @@
                 <div className="text-gray-600">
                   <p>{isPractice ? 'Practice' : 'Experiment'} Progress:</p>
                   <p className="font-semibold mt-2">
-                    {isPractice ? `${currentTrial + 1} of 4` : `${currentTrial - 3} of 40`}
+                    {isPractice ? `${currentTrial + 1} of 4` : `${currentTrial - 3} of 24`}
                   </p>
                 </div>
                 <button
@@ -581,7 +581,7 @@
             {stage === 'experimentStart' && (
               <div className="text-center space-y-6">
                 <h3 className="text-2xl font-bold text-gray-800">Practice Complete!</h3>
-                <p className="text-gray-600">You will now begin the main experiment with 40 trials.</p>
+                <p className="text-gray-600">You will now begin the main experiment with 24 trials.</p>
                 <p className="text-sm text-gray-500">Remember to respond as accurately as possible.</p>
                 <button
                   onClick={startSequenceDisplay}
