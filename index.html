@@ -27,16 +27,18 @@
     const IconDownload = () => <span className="font-bold">⇩</span>;
     const IconReset = () => <span className="font-bold">↻</span>;
 
-    // Experiment word sets - visually similar categories
+    // Experiment word sets - real-world similar objects
     const SIMILAR_SETS = {
-      GREEN: ['frog', 'pear', 'cucumber', 'grass'],
-      RED: ['apple', 'tomato', 'stop sign', 'fire truck'],
-      YELLOW: ['banana', 'sunflower', 'lemon', 'rubber duck'],
-      SPHERICAL: ['basketball', 'orange', 'globe', 'marble'],
-      KITCHEN: ['spoon', 'knife', 'fork', 'plate'],
-      OFFICE: ['pen', 'notebook', 'stapler', 'paperclip'],
-      METAL: ['key', 'coin', 'wrench', 'scissors'],
-      SOFT: ['pillow', 'teddybear', 'blanket', 'sponge']
+      WHITE_BATHROOM: ['soap bar', 'toothbrush', 'towel', 'toilet paper'],
+      SOFT_BEDROOM: ['pillow', 'blanket', 'cushion', 'duvet'],
+      ROUND_FRUITS: ['apple', 'orange', 'peach', 'plum'],
+      WRITING_TOOLS: ['pen', 'pencil', 'marker', 'highlighter'],
+      DRINKING_CONTAINERS: ['cup', 'glass', 'mug', 'bottle'],
+      CLEANING_TOOLS: ['broom', 'mop', 'dustpan', 'bucket'],
+      SCHOOL_SUPPLIES: ['notebook', 'ruler', 'eraser', 'glue stick'],
+      CLOTHING_ITEMS: ['shirt', 'sock', 'jeans', 'jacket'],
+      SMALL_POCKET_ITEMS: ['keys', 'wallet', 'phone', 'earbuds'],
+      KITCHEN_UTENSILS: ['fork', 'spoon', 'knife', 'plate']
     };
 
     // MaKey MaKey key mappings (default: up, down, left, right arrows)
@@ -53,6 +55,7 @@
 
     const DISPLAY_DURATION = 1000; // 1 second per word
     const INTER_WORD_INTERVAL = 500; // 0.5 seconds between words
+    const PRE_DISPLAY_PAUSE = 1000; // 1 second "Get ready..." before first word
     const FINAL_PAUSE = 1500; // 1.5 seconds before recall
 
     // Generate a random distinct set (one word from each of 4 different categories)
@@ -174,11 +177,21 @@
         const positions = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
         setRandomizedPositions(positions);
         setSequence(trial.words);
-        setDisplayIndex(0);
-        setStage('display');
+        setDisplayIndex(-1);
+        setStage('getReady');
         setUserSequence([]);
         setStartTime(null);
       }, [currentTrial, trials]);
+
+      // Pre-display "Get ready..." pause
+      useEffect(() => {
+        if (stage !== 'getReady') return;
+        const timer = setTimeout(() => {
+          setStage('display');
+          setDisplayIndex(0);
+        }, PRE_DISPLAY_PAUSE);
+        return () => clearTimeout(timer);
+      }, [stage]);
 
       // Display sequence animation
       useEffect(() => {
@@ -367,6 +380,17 @@
                 >
                   Begin Practice Trials
                 </button>
+              </div>
+            )}
+
+            {stage === 'getReady' && (
+              <div className="text-center space-y-8">
+                <div className="text-sm text-gray-500 font-semibold">
+                  {isPractice ? 'PRACTICE' : 'EXPERIMENT'} - {getProgressText()}
+                </div>
+                <div className="h-48 flex items-center justify-center">
+                  <div className="text-3xl font-semibold text-gray-500">Get ready...</div>
+                </div>
               </div>
             )}
 
