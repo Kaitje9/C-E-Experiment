@@ -60,49 +60,63 @@
 
     // Generate a random distinct set (one word from each of 4 different categories)
     const generateDistinctSet = () => {
-      const categories = Object.keys(SIMILAR_SETS).filter(
+      const categoryKeys = Object.keys(SIMILAR_SETS).filter(
         (key) => Array.isArray(SIMILAR_SETS[key]) && SIMILAR_SETS[key].length > 0
       );
+      if (categoryKeys.length < 4) {
+        return [];
+      }
       const selectedCategories = [];
       while (selectedCategories.length < 4) {
-        const randomCategory = categories[Math.floor(Math.random() * categories.length)];
+        const randomCategory =
+          categoryKeys[Math.floor(Math.random() * categoryKeys.length)];
         if (!selectedCategories.includes(randomCategory)) {
           selectedCategories.push(randomCategory);
         }
       }
-      return selectedCategories.map(category => {
-        const categoryWords = SIMILAR_SETS[category];
-        return categoryWords[Math.floor(Math.random() * categoryWords.length)];
+      return selectedCategories.map((category) => {
+        const words = SIMILAR_SETS[category] || [];
+        if (!words.length) return '';
+        return words[Math.floor(Math.random() * words.length)];
       });
     };
 
     // Generate all trials for the experiment
     const generateTrials = () => {
       const trials = [];
-      // Practice trials: 2 similar, 2 distinct
+
+      // Collect valid categories
       const categories = Object.keys(SIMILAR_SETS).filter(
-        (key) => Array.isArray(SIMILAR_SETS[key]) && SIMILAR_SETS[key].length > 0
+        (key) => Array.isArray(SIMILAR_SETS[key]) && SIMILAR_SETS[key].length === 4
       );
-      const practiceSimilarCategories = categories.slice(0, 2);
-      practiceSimilarCategories.forEach(category => {
+      if (!categories.length) {
+        return trials;
+      }
+
+      // Practice trials: 2 similar (first two categories or repeated first), 2 distinct
+      const firstCat = categories[0];
+      const secondCat = categories[1] || categories[0];
+
+      [firstCat, secondCat].forEach((category) => {
         const words = SIMILAR_SETS[category] || [];
         trials.push({
           type: 'practice',
           condition: 'similar',
           category,
-          words: [...words]
+          words: words.slice(),
         });
       });
+
       for (let i = 0; i < 2; i++) {
         trials.push({
           type: 'practice',
           condition: 'distinct',
           category: 'mixed',
-          words: generateDistinctSet()
+          words: generateDistinctSet(),
         });
       }
+
       // Experimental trials: 20 similar, 20 distinct
-      // categories already defined above
       for (let i = 0; i < 20; i++) {
         const category = categories[Math.floor(Math.random() * categories.length)];
         const words = SIMILAR_SETS[category] || [];
@@ -110,22 +124,23 @@
           type: 'experiment',
           condition: 'similar',
           category,
-          words: [...words]
+          words: words.slice(),
         });
       }
+
       for (let i = 0; i < 20; i++) {
         trials.push({
           type: 'experiment',
           condition: 'distinct',
           category: 'mixed',
-          words: generateDistinctSet()
+          words: generateDistinctSet(),
         });
       }
       // Shuffle experimental trials while avoiding back-to-back same categories
       const practiceTrials = trials.slice(0, 4);
       const experimentTrials = trials.slice(4);
       const shuffled = [];
-      const remaining = [...experimentTrials].sort(() => Math.random() - 0.5);
+      const remaining = experimentTrials.slice().sort(() => Math.random() - 0.5);
       while (remaining.length > 0) {
         let foundValid = false;
         for (let i = 0; i < remaining.length; i++) {
