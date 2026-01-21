@@ -224,6 +224,22 @@
         setTrials(generateTrials());
       }, []);
 
+      const selectWordPosition = useCallback(
+        (wordPosition) => {
+          if (stage !== 'recall') return;
+          if (wordPosition === undefined || wordPosition === null) return;
+          if (userSequence.includes(wordPosition)) return;
+
+          const newSequence = [...userSequence, wordPosition];
+          setUserSequence(newSequence);
+
+          if (newSequence.length === sequence.length) {
+            recordTrial(newSequence);
+          }
+        },
+        [stage, userSequence, sequence]
+      );
+
       // Handle keyboard input from MaKey MaKey
       useEffect(() => {
         const handleKeyPress = (e) => {
@@ -231,17 +247,11 @@
           const arrowPosition = KEY_MAPPINGS[e.key];
           if (arrowPosition === undefined) return;
           const wordPosition = randomizedPositions[arrowPosition];
-          if (!userSequence.includes(wordPosition)) {
-            const newSequence = [...userSequence, wordPosition];
-            setUserSequence(newSequence);
-            if (newSequence.length === sequence.length) {
-              recordTrial(newSequence);
-            }
-          }
+          selectWordPosition(wordPosition);
         };
         window.addEventListener('keydown', handleKeyPress);
         return () => window.removeEventListener('keydown', handleKeyPress);
-      }, [stage, sequence, userSequence, randomizedPositions]);
+      }, [stage, randomizedPositions, selectWordPosition]);
 
       const startSequenceDisplay = useCallback(() => {
         if (currentTrial >= trials.length) return;
@@ -532,17 +542,30 @@
                     {isPractice ? 'PRACTICE' : 'EXPERIMENT'} - {getProgressText()}
                   </div>
                   <h3 className="text-2xl font-bold text-gray-800 mb-2">Recall the sequence</h3>
-                  <p className="text-gray-600">Touch the objects in the correct order</p>
+                  <p className="text-gray-600">Touch the objects (or tap the words) in the correct order</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   {randomizedPositions.map((wordIdx, arrowIdx) => (
                     <div
                       key={arrowIdx}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => selectWordPosition(wordIdx)}
+                      onTouchStart={(e) => {
+                        e.preventDefault();
+                        selectWordPosition(wordIdx);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          selectWordPosition(wordIdx);
+                        }
+                      }}
                       className={`p-4 rounded-lg border-2 text-center transition-all ${
                         userSequence.includes(wordIdx)
                           ? 'bg-indigo-100 border-indigo-500'
                           : 'bg-gray-50 border-gray-300'
-                      }`}
+                      } cursor-pointer select-none`}
                     >
                       <div className="text-lg font-semibold text-gray-800">{sequence[wordIdx]}</div>
                       <div className="text-sm text-gray-500 mt-1">{getPositionLabel(arrowIdx)}</div>
