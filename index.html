@@ -60,7 +60,9 @@
 
     // Generate a random distinct set (one word from each of 4 different categories)
     const generateDistinctSet = () => {
-      const categories = Object.keys(SIMILAR_SETS);
+      const categories = Object.keys(SIMILAR_SETS).filter(
+        (key) => Array.isArray(SIMILAR_SETS[key]) && SIMILAR_SETS[key].length > 0
+      );
       const selectedCategories = [];
       while (selectedCategories.length < 4) {
         const randomCategory = categories[Math.floor(Math.random() * categories.length)];
@@ -78,14 +80,17 @@
     const generateTrials = () => {
       const trials = [];
       // Practice trials: 2 similar, 2 distinct
-      const categories = Object.keys(SIMILAR_SETS);
+      const categories = Object.keys(SIMILAR_SETS).filter(
+        (key) => Array.isArray(SIMILAR_SETS[key]) && SIMILAR_SETS[key].length > 0
+      );
       const practiceSimilarCategories = categories.slice(0, 2);
       practiceSimilarCategories.forEach(category => {
+        const words = SIMILAR_SETS[category] || [];
         trials.push({
           type: 'practice',
           condition: 'similar',
           category,
-          words: [...SIMILAR_SETS[category]]
+          words: [...words]
         });
       });
       for (let i = 0; i < 2; i++) {
@@ -100,11 +105,12 @@
       // categories already defined above
       for (let i = 0; i < 20; i++) {
         const category = categories[Math.floor(Math.random() * categories.length)];
+        const words = SIMILAR_SETS[category] || [];
         trials.push({
           type: 'experiment',
           condition: 'similar',
           category,
-          words: [...SIMILAR_SETS[category]]
+          words: [...words]
         });
       }
       for (let i = 0; i < 20; i++) {
