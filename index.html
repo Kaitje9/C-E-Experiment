@@ -78,7 +78,9 @@
     const generateTrials = () => {
       const trials = [];
       // Practice trials: 2 similar, 2 distinct
-      ['GREEN', 'RED'].forEach(category => {
+      const categories = Object.keys(SIMILAR_SETS);
+      const practiceSimilarCategories = categories.slice(0, 2);
+      practiceSimilarCategories.forEach(category => {
         trials.push({
           type: 'practice',
           condition: 'similar',
@@ -95,7 +97,7 @@
         });
       }
       // Experimental trials: 20 similar, 20 distinct
-      const categories = Object.keys(SIMILAR_SETS);
+      // categories already defined above
       for (let i = 0; i < 20; i++) {
         const category = categories[Math.floor(Math.random() * categories.length)];
         trials.push({
