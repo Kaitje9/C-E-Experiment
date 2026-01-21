@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Working Memory Experiment</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Tailwind (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100">
+  <div id="root"></div>
+
+  <!-- React 18 UMD + Babel (to allow JSX without build tools) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- jsPDF UMD -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- App Code -->
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+    const { jsPDF } = window.jspdf;
+
+    // Simple icon fallbacks (text) to avoid extra imports
+    const IconPlay = () => <span className="font-bold">►</span>;
+    const IconDownload = () => <span className="font-bold">⇩</span>;
+    const IconReset = () => <span className="font-bold">↻</span>;
+
+    // Experiment word sets - visually similar categories
+    const SIMILAR_SETS = {
+      GREEN: ['frog', 'pear', 'cucumber', 'grass'],
+      RED: ['apple', 'tomato', 'stop sign', 'fire truck'],
+      YELLOW: ['banana', 'sunflower', 'lemon', 'rubber duck'],
+      SPHERICAL: ['basketball', 'orange', 'globe', 'marble'],
+      KITCHEN: ['spoon', 'knife', 'fork', 'plate'],
+      OFFICE: ['pen', 'notebook', 'stapler', 'paperclip'],
+      METAL: ['key', 'coin', 'wrench', 'scissors'],
+      SOFT: ['pillow', 'teddybear', 'blanket', 'sponge']
+    };
+
+    // MaKey MaKey key mappings (default: up, down, left, right arrows)
+    const KEY_MAPPINGS = {
+      ArrowUp: 0,
+      ArrowDown: 1,
+      ArrowLeft: 2,
+      ArrowRight: 3,
+      w: 0,
+      s: 1,
+      a: 2,
+      d: 3
+    };
+
+    const DISPLAY_DURATION = 1000; // 1 second per word
+    const INTER_WORD_INTERVAL = 500; // 0.5 seconds between words
+    const FINAL_PAUSE = 1500; // 1.5 seconds before recall
+
+    // Generate a random distinct set (one word from each of 4 different categories)
+    const generateDistinctSet = () => {
+      const categories = Object.keys(SIMILAR_SETS);
+      const selectedCategories = [];
+      while (selectedCategories.length < 4) {
+        const randomCategory = categories[Math.floor(Math.random() * categories.length)];
+        if (!selectedCategories.includes(randomCategory)) {
+          selectedCategories.push(randomCategory);
+        }
+      }
+      return selectedCategories.map(category => {
+        const categoryWords = SIMILAR_SETS[category];
+        return categoryWords[Math.floor(Math.random() * categoryWords.length)];
+      });
+    };
+
+    // Generate all trials for the experiment
+    const generateTrials = () => {
+      const trials = [];
+      // Practice trials: 2 similar, 2 distinct
+      ['GREEN', 'RED'].forEach(category => {
+        trials.push({
+          type: 'practice',
+          condition: 'similar',
+          category,
+          words: [...SIMILAR_SETS[category]]
+        });
+      });
+      for (let i = 0; i < 2; i++) {
+        trials.push({
+          type: 'practice',
+          condition: 'distinct',
+          category: 'mixed',
+          words: generateDistinctSet()
+        });
+      }
+      // Experimental trials: 20 similar, 20 distinct
+      const categories = Object.keys(SIMILAR_SETS);
+      for (let i = 0; i < 20; i++) {
+        const category = categories[Math.floor(Math.random() * categories.length)];
+        trials.push({
+          type: 'experiment',
+          condition: 'similar',
+          category,
+          words: [...SIMILAR_SETS[category]]
+        });
+      }
+      for (let i = 0; i < 20; i++) {
+        trials.push({
+          type: 'experiment',
+          condition: 'distinct',
+          category: 'mixed',
+          words: generateDistinctSet()
+        });
+      }
+      // Shuffle experimental trials while avoiding back-to-back same categories
+      const practiceTrials = trials.slice(0, 4);
+      const experimentTrials = trials.slice(4);
+      const shuffled = [];
+      const remaining = [...experimentTrials].sort(() => Math.random() - 0.5);
+      while (remaining.length > 0) {
+        let foundValid = false;
+        for (let i = 0; i < remaining.length; i++) {
+          const trial = remaining[i];
+          const lastTrial = shuffled[shuffled.length - 1];
+          if (!lastTrial || trial.category !== lastTrial.category) {
+            shuffled.push(trial);
+            remaining.splice(i, 1);
+            foundValid = true;
+            break;
+          }
+        }
+        if (!foundValid) shuffled.push(remaining.shift());
+      }
+      return [...practiceTrials, ...shuffled];
+    };
+
+    function MemoryExperiment() {
+      const [stage, setStage] = useState('welcome');
+      const [currentTrial, setCurrentTrial] = useState(0);
+      const [isPractice, setIsPractice] = useState(true);
+      const [sequence, setSequence] = useState([]);
+      const [randomizedPositions, setRandomizedPositions] = useState([]);
+      const [displayIndex, setDisplayIndex] = useState(-1);
+      const [userSequence, setUserSequence] = useState([]);
+      const [startTime, setStartTime] = useState(null);
+      const [trialData, setTrialData] = useState([]);
+      const [participantId, setParticipantId] = useState('');
+      const [trials, setTrials] = useState([]);
+
+      useEffect(() => {
+        setTrials(generateTrials());
+      }, []);
+
+      // Handle keyboard input from MaKey MaKey
+      useEffect(() => {
+        const handleKeyPress = (e) => {
+          if (stage !== 'recall') return;
+          const arrowPosition = KEY_MAPPINGS[e.key];
+          if (arrowPosition === undefined) return;
+          const wordPosition = randomizedPositions[arrowPosition];
+          if (!userSequence.includes(wordPosition)) {
+            const newSequence = [...userSequence, wordPosition];
+            setUserSequence(newSequence);
+            if (newSequence.length === sequence.length) {
+              recordTrial(newSequence);
+            }
+          }
+        };
+        window.addEventListener('keydown', handleKeyPress);
+        return () => window.removeEventListener('keydown', handleKeyPress);
+      }, [stage, sequence, userSequence, randomizedPositions]);
+
+      const startSequenceDisplay = useCallback(() => {
+        if (currentTrial >= trials.length) return;
+        const trial = trials[currentTrial];
+        const positions = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
+        setRandomizedPositions(positions);
+        setSequence(trial.words);
+        setDisplayIndex(0);
+        setStage('display');
+        setUserSequence([]);
+        setStartTime(null);
+      }, [currentTrial, trials]);
+
+      // Display sequence animation
+      useEffect(() => {
+        if (stage !== 'display' || displayIndex === -1) return;
+        if (displayIndex < sequence.length * 2) {
+          const isShowingWord = displayIndex % 2 === 0;
+          const duration = isShowingWord ? DISPLAY_DURATION : INTER_WORD_INTERVAL;
+          const timer = setTimeout(() => setDisplayIndex(displayIndex + 1), duration);
+          return () => clearTimeout(timer);
+        } else {
+          const timer = setTimeout(() => {
+            setStage('recall');
+            setStartTime(Date.now());
+            setDisplayIndex(-1);
+          }, FINAL_PAUSE);
+          return () => clearTimeout(timer);
+        }
+      }, [stage, displayIndex, sequence]);
+
+      const recordTrial = (finalSequence) => {
+        if (startTime === null) return;
+        const endTime = Date.now();
+        const responseTime = endTime - startTime;
+        const correct = finalSequence.every((pos, idx) => pos === idx);
+        const trial = trials[currentTrial];
+        const data = {
+          participantId,
+          trialNumber: currentTrial + 1,
+          isPractice: trial.type === 'practice',
+          condition: trial.condition,
+          category: trial.category,
+          sequence: sequence.join(','),
+          userResponse: finalSequence.map(pos => sequence[pos]).join(','),
+          userOrder: finalSequence.join(','),
+          correct,
+          accuracy: finalSequence.filter((pos, idx) => pos === idx).length / sequence.length,
+          responseTime,
+          timestamp: new Date().toISOString()
+        };
+        setTrialData(prev => [...prev, data]);
+        if (currentTrial + 1 >= trials.length) {
+          setStage('complete');
+        } else {
+          setStage('betweenTrials');
+        }
+      };
+
+      const nextTrial = () => {
+        setCurrentTrial(prev => prev + 1);
+        if (currentTrial + 1 === 4) {
+          setIsPractice(false);
+          setStage('experimentStart');
+        } else {
+          startSequenceDisplay();
+        }
+      };
+
+      const downloadData = () => {
+        if (!trialData.length) return;
+        const doc = new jsPDF();
+        let y = 10;
+
+        doc.setFontSize(16);
+        doc.text('Working Memory Experiment Results', 10, y);
+        y += 8;
+
+        doc.setFontSize(12);
+        doc.text(`Participant ID: ${participantId || 'N/A'}`, 10, y);
+        y += 6;
+
+        const expTrials = trialData.filter(d => !d.isPractice);
+        if (expTrials.length > 0) {
+          const correctCount = expTrials.filter(d => d.correct).length;
+          const overallAcc = (correctCount / expTrials.length) * 100;
+          const avgRT = expTrials.reduce((sum, d) => sum + d.responseTime, 0) / expTrials.length;
+          const similarTrials = expTrials.filter(d => d.condition === 'similar');
+          const distinctTrials = expTrials.filter(d => d.condition === 'distinct');
+          const similarAcc = similarTrials.length
+            ? (similarTrials.filter(d => d.correct).length / similarTrials.length) * 100
+            : 0;
+          const distinctAcc = distinctTrials.length
+            ? (distinctTrials.filter(d => d.correct).length / distinctTrials.length) * 100
+            : 0;
+
+          doc.text(`Total experimental trials: ${expTrials.length}`, 10, y); y += 6;
+          doc.text(`Overall accuracy: ${overallAcc.toFixed(1)}%`, 10, y); y += 6;
+          doc.text(`Average response time: ${(avgRT / 1000).toFixed(2)} s`, 10, y); y += 6;
+          doc.text(`Similar trials accuracy: ${similarAcc.toFixed(1)}%`, 10, y); y += 6;
+          doc.text(`Distinct trials accuracy: ${distinctAcc.toFixed(1)}%`, 10, y); y += 10;
+        }
+
+        doc.setFontSize(11);
+        doc.text('Trial  Type   Cond   Cat   Correct   Acc   RT(ms)', 10, y);
+        y += 5;
+        doc.setLineWidth(0.1);
+        doc.line(10, y, 200, y);
+        y += 4;
+
+        trialData.forEach((d) => {
+          const line = [
+            `T${d.trialNumber}`,
+            d.isPractice ? 'P' : 'E',
+            d.condition,
+            String(d.category),
+            d.correct ? '1' : '0',
+            d.accuracy.toFixed(2),
+            String(d.responseTime)
+          ].join('   ');
+          if (y > 280) {
+            doc.addPage();
+            y = 10;
+          }
+          doc.text(line, 10, y);
+          y += 5;
+        });
+
+        doc.save(`memory-experiment-${participantId || 'unknown'}-${Date.now()}.pdf`);
+      };
+
+      const reset = () => {
+        setStage('welcome');
+        setCurrentTrial(0);
+        setIsPractice(true);
+        setTrialData([]);
+        setParticipantId('');
+        setTrials(generateTrials());
+      };
+
+      const getPositionLabel = (index) => ['↑ (Object 1)', '↓ (Object 2)', '← (Object 3)', '→ (Object 4)'][index];
+      const getProgressText = () => isPractice ? `Practice Trial ${currentTrial + 1} of 4` : `Trial ${currentTrial - 3} of 40`;
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-8">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-2xl w-full">
+            {stage === 'welcome' && (
+              <div className="text-center space-y-6">
+                <h1 className="text-3xl font-bold text-gray-800">Working Memory Experiment</h1>
+                <p className="text-gray-600">Testing the effect of visual similarity on memory recall</p>
+                <div className="bg-blue-50 p-4 rounded-lg text-sm text-gray-700">
+                  <p className="font-semibold mb-2">Experiment Structure:</p>
+                  <ul className="space-y-1">
+                    <li>• 4 practice trials (2 similar, 2 distinct)</li>
+                    <li>• 40 experimental trials (20 similar, 20 distinct)</li>
+                    <li>• Each trial shows 4 words in sequence</li>
+                  </ul>
+                </div>
+                <div className="space-y-4">
+                  <input
+                    type="text"
+                    placeholder="Enter Participant ID"
+                    value={participantId}
+                    onChange={(e) => setParticipantId(e.target.value)}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:outline-none"
+                  />
+                  <button
+                    onClick={() => setStage('instructions')}
+                    disabled={!participantId}
+                    className="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                  >
+                    <IconPlay />
+                    Start Experiment
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {stage === 'instructions' && (
+              <div className="space-y-6">
+                <h2 className="text-2xl font-bold text-gray-800">Instructions</h2>
+                <div className="space-y-4 text-gray-700">
+                  <p>In this experiment, you will see a sequence of 4 words displayed one at a time.</p>
+                  <p>Your task is to remember the words in the correct order.</p>
+                  <p>After all words are shown, you will recreate the sequence by touching the objects connected to the MaKey MaKey board:</p>
+                  <ul className="list-disc list-inside space-y-2 pl-4">
+                    <li><strong>Object 1</strong> - Arrow Up (↑)</li>
+                    <li><strong>Object 2</strong> - Arrow Down (↓)</li>
+                    <li><strong>Object 3</strong> - Arrow Left (←)</li>
+                    <li><strong>Object 4</strong> - Arrow Right (→)</li>
+                  </ul>
+                  <p className="font-semibold">You will start with 4 practice trials, followed by 40 experimental trials.</p>
+                  <p className="text-sm text-gray-600">Take your time and try to be as accurate as possible.</p>
+                </div>
+                <button
+                  onClick={() => { setStage('practice'); startSequenceDisplay(); }}
+                  className="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+                >
+                  Begin Practice Trials
+                </button>
+              </div>
+            )}
+
+            {stage === 'display' && (
+              <div className="text-center space-y-8">
+                <div className="text-sm text-gray-500 font-semibold">
+                  {isPractice ? 'PRACTICE' : 'EXPERIMENT'} - {getProgressText()}
+                </div>
+                <div className="h-48 flex items-center justify-center">
+                  {displayIndex < sequence.length * 2 ? (
+                    displayIndex % 2 === 0 ? (
+                      <div className="text-6xl font-bold text-indigo-600 animate-pulse">
+                        {sequence[Math.floor(displayIndex / 2)]}
+                      </div>
+                    ) : (
+                      <div className="text-2xl text-gray-300">•</div>
+                    )
+                  ) : (
+                    <div className="text-2xl text-gray-300">Get ready...</div>
+                  )}
+                </div>
+                <div className="flex gap-2 justify-center">
+                  {sequence.map((_, idx) => (
+                    <div
+                      key={idx}
+                      className={`w-4 h-4 rounded-full transition-colors ${
+                        idx < Math.floor(displayIndex / 2) ? 'bg-indigo-600' : 'bg-gray-300'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {stage === 'recall' && (
+              <div className="space-y-8">
+                <div className="text-center">
+                  <div className="text-sm text-gray-500 font-semibold mb-4">
+                    {isPractice ? 'PRACTICE' : 'EXPERIMENT'} - {getProgressText()}
+                  </div>
+                  <h3 className="text-2xl font-bold text-gray-800 mb-2">Recall the sequence</h3>
+                  <p className="text-gray-600">Touch the objects in the correct order</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  {randomizedPositions.map((wordIdx, arrowIdx) => (
+                    <div
+                      key={arrowIdx}
+                      className={`p-4 rounded-lg border-2 text-center transition-all ${
+                        userSequence.includes(wordIdx)
+                          ? 'bg-indigo-100 border-indigo-500'
+                          : 'bg-gray-50 border-gray-300'
+                      }`}
+                    >
+                      <div className="text-lg font-semibold text-gray-800">{sequence[wordIdx]}</div>
+                      <div className="text-sm text-gray-500 mt-1">{getPositionLabel(arrowIdx)}</div>
+                      {userSequence.includes(wordIdx) && (
+                        <div className="text-indigo-600 font-bold mt-2">
+                          Position: {userSequence.indexOf(wordIdx) + 1}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="text-center text-sm text-gray-500">
+                  Selected: {userSequence.length} of {sequence.length}
+                </div>
+              </div>
+            )}
+
+            {stage === 'betweenTrials' && (
+              <div className="text-center space-y-6">
+                <h3 className="text-2xl font-bold text-gray-800">Trial Complete</h3>
+                <div className="text-gray-600">
+                  <p>{isPractice ? 'Practice' : 'Experiment'} Progress:</p>
+                  <p className="font-semibold mt-2">
+                    {isPractice ? `${currentTrial + 1} of 4` : `${currentTrial - 3} of 40`}
+                  </p>
+                </div>
+                <button
+                  onClick={nextTrial}
+                  className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+                >
+                  Continue
+                </button>
+              </div>
+            )}
+
+            {stage === 'experimentStart' && (
+              <div className="text-center space-y-6">
+                <h3 className="text-2xl font-bold text-gray-800">Practice Complete!</h3>
+                <p className="text-gray-600">You will now begin the main experiment with 40 trials.</p>
+                <p className="text-sm text-gray-500">Remember to respond as accurately as possible.</p>
+                <button
+                  onClick={startSequenceDisplay}
+                  className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+                >
+                  Start Experiment
+                </button>
+              </div>
+            )}
+
+            {stage === 'complete' && (
+              <div className="text-center space-y-6">
+                <h2 className="text-3xl font-bold text-gray-800">Experiment Complete!</h2>
+                <p className="text-gray-600">Thank you for participating.</p>
+                <div className="bg-gray-50 p-6 rounded-lg space-y-4">
+                  <h3 className="font-semibold text-gray-800 mb-4">Summary</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="text-left">
+                      <div className="font-semibold text-gray-700">Total Trials:</div>
+                      <div className="text-2xl font-bold text-indigo-600">
+                        {trialData.filter(d => !d.isPractice).length}
+                      </div>
+                    </div>
+                    <div className="text-left">
+                      <div className="font-semibold text-gray-700">Overall Accuracy:</div>
+                      <div className="text-2xl font-bold text-indigo-600">
+                        {(trialData.filter(d => !d.isPractice && d.correct).length /
+                          trialData.filter(d => !d.isPractice).length * 100 || 0).toFixed(1)}%
+                      </div>
+                    </div>
+                    <div className="text-left col-span-2">
+                      <div className="font-semibold text-gray-700">Average Response Time:</div>
+                      <div className="text-2xl font-bold text-indigo-600">
+                        {(trialData.filter(d => !d.isPractice)
+                          .reduce((sum, d) => sum + d.responseTime, 0) /
+                          (trialData.filter(d => !d.isPractice).length || 1) /
+                          1000).toFixed(2)}s
+                      </div>
+                    </div>
+                  </div>
+                  <div className="pt-4 border-t border-gray-200">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <div className="font-semibold text-gray-600">Similar Trials:</div>
+                        <div className="text-indigo-600">
+                          {(trialData.filter(d => !d.isPractice && d.condition === 'similar' && d.correct).length /
+                            (trialData.filter(d => !d.isPractice && d.condition === 'similar').length || 1) * 100
+                          ).toFixed(1)}% accuracy
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-semibold text-gray-600">Distinct Trials:</div>
+                        <div className="text-indigo-600">
+                          {(trialData.filter(d => !d.isPractice && d.condition === 'distinct' && d.correct).length /
+                            (trialData.filter(d => !d.isPractice && d.condition === 'distinct').length || 1) * 100
+                          ).toFixed(1)}% accuracy
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <button
+                    onClick={downloadData}
+                    className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <IconDownload />
+                    Download Data
+                  </button>
+                  <button
+                    onClick={reset}
+                    className="flex-1 bg-gray-600 text-white py-3 rounded-lg font-semibold hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <IconReset />
+                    New Participant
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<MemoryExperiment />);
+  </script>
+</body>
+</html>
